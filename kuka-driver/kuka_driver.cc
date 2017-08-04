@@ -29,7 +29,7 @@ namespace {
 
 const int kNumJoints = 7;
 const int kDefaultPort = 30200;
-const int kTimeStep = 0.005;
+const double kTimeStep = 0.005;
 const char *kLcmStatusChannel = "IIWA_STATUS";
 const char *kLcmCommandChannel = "IIWA_COMMAND";
 
@@ -93,7 +93,7 @@ public:
     if (utime_last_.at(robot_id) != -1) {
       robot_dt = static_cast<double>(utime_now - utime_last_.at(robot_id)) / 1e6;
       // Check timing
-      if (std::abs(robot_dt - kTimeStep) > kTimeStep) {
+      if (std::abs(robot_dt - kTimeStep) > 1e-3) {
         std::cout << "Warning: dt " << robot_dt
                   << ", kTimeStep " << kTimeStep << "\n";
       }
