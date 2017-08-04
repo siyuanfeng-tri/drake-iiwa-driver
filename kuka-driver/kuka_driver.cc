@@ -71,8 +71,11 @@ public:
     // received.
     lcm_command_.utime = -1;
 
-    lcm_.subscribe(FLAGS_lcm_command_channel,
-                   &KukaLCMClient::HandleCommandMessage, this);
+    // Set the subscriber's queue to 1, only pay attention to the latest
+    // command!
+    lcm::Subscription* sub = lcm_.subscribe(FLAGS_lcm_command_channel,
+        &KukaLCMClient::HandleCommandMessage, this);
+    sub->setQueueCapacity(1);
 
     // Resets all the timestamps for all the robots to -1.
     utime_last_.resize(num_joints_, -1);
@@ -85,6 +88,17 @@ public:
     // Current time stamp for this robot.
     const int64_t utime_now =
         state.getTimestampSec() * 1e6 + state.getTimestampNanoSec() / 1e3;
+    // Get delta time for this robot.
+    double robot_dt = 0.;
+    if (utime_last_.at(robot_id) != -1) {
+      robot_dt = static_cast<double>(utime_now - utime_last_.at(robot_id)) / 1e6;
+      // Check timing
+      if (std::abs(robot_dt - kTimeStep) > kTimeStep) {
+        std::cout << "Warning: dt " << robot_dt
+                  << ", kTimeStep " << kTimeStep << "\n";
+      }
+    }
+    utime_last_.at(robot_id) = utime_now;
 
     // The choice of robot id 0 for the timestamp is arbitrary.
     if (robot_id == 0) {
@@ -92,31 +106,17 @@ public:
     }
 
     // Skip the first tick for all the filtering stuff.
-    if (utime_last_.at(robot_id) != -1) {
+    if (robot_dt != 0.) {
       for (int i = 0; i < kNumJoints; i++) {
         const int index = joint_offset + i;
         const double q_diff = state.getMeasuredJointPosition()[i] -
                               lcm_status_.joint_position_measured[index];
-        const double dt =
-            static_cast<double>(utime_now - utime_last_.at(robot_id)) / 1e6;
-
-        // Check timing
-        if (std::abs(dt - kTimeStep) > kTimeStep) {
-          std::cout << "Warning: dt " << dt << ", kTimeStep " << kTimeStep
-                    << "\n";
-        }
 
         // Need to filter.
         lcm_status_.joint_velocity_estimated[index] =
-            vel_filters_[index].filter(q_diff / dt);
-      }
-    } else {
-      for (int i = 0; i < kNumJoints; i++) {
-        const int index = joint_offset + i;
-        lcm_status_.joint_velocity_estimated[index] = 0.;
+            vel_filters_[index].filter(q_diff / robot_dt);
       }
     }
-    utime_last_.at(robot_id) = utime_now;
 
     // Set joint states.
     std::memcpy(lcm_status_.joint_position_measured.data() + joint_offset,
